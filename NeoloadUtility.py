@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 import json
+import os
 import shlex
 from urllib.parse import urlparse, parse_qs
 from collections import defaultdict
@@ -283,4 +284,7 @@ def postman_to_openapi():
         return jsonify({"error": f"Failed to convert Postman: {e}"}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get('PORT', 10000))  # Render gives a dynamic port
+    app.run(host='0.0.0.0', port=port,debug=True)
+    
