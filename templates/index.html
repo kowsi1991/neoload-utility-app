@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NeoLoad Forge</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+  <h1>NeoLoad Forge</h1>
+  <p>Select a utility:</p>
+
+  <select id="tool-selector">
+    <option value="curl-commands">1. CURL commands → OpenAPI</option>
+    <option value="curl-file">2. CURL file → OpenAPI</option>
+    <option value="postman-openapi">3. Postman JSON → OpenAPI</option>
+  </select>
+
+  <div id="curl-commands-section" class="form-section active">
+    <h2>CURL commands → OpenAPI</h2>
+    <textarea id="curl-commands-input" placeholder="Paste a cURL command"></textarea>
+    <button id="validate-button">Validate</button>
+    <button id="add-request-button" style="display:none;">Add Request</button>
+    <p id="validation-message" class="message"></p>
+    <h3>Validated Requests (<span id="request-count">0</span>)</h3>
+    <ul id="requests-list"></ul>
+    <button id="generate-button" style="display:none;">Generate OpenAPI JSON</button>
+    <button id="download-button-curl" style="display:none;">Download JSON</button>
+  </div>
+
+  <div id="curl-file-section" class="form-section">
+    <h2>CURL file → OpenAPI</h2>
+    <input type="file" id="curl-file-input" accept=".txt,.log">
+    <button id="upload-button">Upload & Generate</button>
+    <button id="download-button-curl-file" style="display:none;">Download JSON</button>
+  </div>
+
+  <div id="postman-openapi-section" class="form-section">
+    <h2>Postman JSON → OpenAPI</h2>
+    <input type="file" id="postman-openapi-input" accept=".json">
+    <button id="postman-openapi-button">Upload & Generate</button>
+    <button id="download-button-postman" style="display:none;">Download JSON</button>
+  </div>
+
+  <div class="result-box">
+    <h3>Result</h3>
+    <pre id="output-box"></pre>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const toolSelector = document.getElementById('tool-selector');
+    const sections = document.querySelectorAll('.form-section');
+    const outputBox = document.getElementById('output-box');
+    
+    const curlInput = document.getElementById('curl-commands-input');
+    const validateButton = document.getElementById('validate-button');
+    const addRequestButton = document.getElementById('add-request-button');
+    const generateButton = document.getElementById('generate-button');
+    const downloadButtonCurl = document.getElementById('download-button-curl');
+    const downloadButtonCurlFile = document.getElementById('download-button-curl-file');
+    const downloadButtonPostman = document.getElementById('download-button-postman');
+    const validationMessage = document.getElementById('validation-message');
+    const requestsList = document.getElementById('requests-list');
+    const requestCount = document.getElementById('request-count');
+    
+    let validatedRequests = [];
+
+    function showSection(id) {
+        sections.forEach(section => section.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        
+        outputBox.textContent = '';
+        hideAllDownloadButtons();
+
+        if (id === 'curl-commands-section') {
+            validatedRequests = [];
+            updateRequestsList();
+        }
+    }
+
+    function hideAllDownloadButtons() {
+        downloadButtonCurl.style.display = 'none';
+        downloadButtonCurlFile.style.display = 'none';
+        downloadButtonPostman.style.display = 'none';
+    }
+
+    function updateRequestsList() {
+        requestsList.innerHTML = '';
+        validatedRequests.forEach((req, index) => {
+            const li = document.createElement('li');
+            li.textContent = `Request ${index + 1}`;
+            requestsList.appendChild(li);
+        });
+        requestCount.textContent = validatedRequests.length;
+        generateButton.style.display = validatedRequests.length > 0 ? 'block' : 'none';
+    }
+
+    toolSelector.addEventListener('change', (event) => {
+        const selectedTool = event.target.value;
+        if (selectedTool === 'curl-commands') {
+            showSection('curl-commands-section');
+        } else if (selectedTool === 'curl-file') {
+            showSection('curl-file-section');
+        } else if (selectedTool === 'postman-openapi') {
+            showSection('postman-openapi-section');
+        }
+    });
+
+    // Validate cURL command
+    validateButton.addEventListener('click', () => {
+        const command = curlInput.value.trim();
+        if (!command) {
+            validationMessage.textContent = "Please enter a cURL command.";
+            validationMessage.style.color = 'red';
+            addRequestButton.style.display = 'none';
+            return;
+        }
+
+        fetch('/validate_curl', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: command })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || 'Unknown validation error'); });
+            }
+            return response.json();
+        })
+        .then(() => {
+            validationMessage.textContent = "✅ Valid!";
+            validationMessage.style.color = 'green';
+            addRequestButton.style.display = 'inline-block';
+        })
+        .catch(err => {
+            validationMessage.textContent = `❌ Error: ${err.message}`;
+            validationMessage.style.color = 'red';
+            addRequestButton.style.display = 'none';
+        });
+    });
+
+    // Add validated request
+    addRequestButton.addEventListener('click', () => {
+        const command = curlInput.value.trim();
+        if (command) {
+            validatedRequests.push(command);
+            updateRequestsList();
+            curlInput.value = '';
+            validationMessage.textContent = '';
+            addRequestButton.style.display = 'none';
+        }
+    });
+
+    // Generate OpenAPI JSON from commands
+    generateButton.addEventListener('click', () => {
+        if (validatedRequests.length === 0) {
+            outputBox.textContent = "Please add at least one validated request.";
+            return;
+        }
+        fetch('/generate_openapi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requests: validatedRequests })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || 'Unknown server error'); });
+            }
+            return response.json();
+        })
+        .then(json => {
+            outputBox.textContent = JSON.stringify(json, null, 2);
+            hideAllDownloadButtons();
+            downloadButtonCurl.style.display = 'inline-block';
+        })
+        .catch(err => {
+            outputBox.textContent = `Error: ${err.message}`;
+            hideAllDownloadButtons();
+        });
+    });
+
+    // Upload CURL file and generate OpenAPI JSON
+    document.getElementById('upload-button').addEventListener('click', () => {
+        const file = document.getElementById('curl-file-input').files[0];
+        if (!file) {
+            outputBox.textContent = "Please select a file.";
+            return;
+        }
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch('/upload_curl_file', { method: 'POST', body: formData })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || 'Unknown server error'); });
+            }
+            return response.json();
+        })
+        .then(json => {
+            outputBox.textContent = JSON.stringify(json, null, 2);
+            hideAllDownloadButtons();
+            downloadButtonCurlFile.style.display = 'inline-block';
+        })
+        .catch(err => {
+            outputBox.textContent = `Error: ${err.message}`;
+            hideAllDownloadButtons();
+        });
+    });
+
+    // Postman JSON to OpenAPI conversion
+    document.getElementById('postman-openapi-button').addEventListener('click', () => {
+        const file = document.getElementById('postman-openapi-input').files[0];
+        if (!file) {
+            outputBox.textContent = "Please select a Postman JSON file.";
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            try {
+                const postmanData = JSON.parse(event.target.result);
+                fetch('/postman_to_openapi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collection: postmanData })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(err => { throw new Error(err.error || 'Unknown server error'); });
+                    }
+                    return response.json();
+                })
+                .then(json => {
+                    outputBox.textContent = JSON.stringify(json, null, 2);
+                    hideAllDownloadButtons();
+                    downloadButtonPostman.style.display = 'inline-block';
+                })
+                .catch(err => {
+                    outputBox.textContent = `Error: ${err.message}`;
+                    hideAllDownloadButtons();
+                });
+            } catch (e) {
+                outputBox.textContent = "Error: Invalid JSON file. Please upload a valid Postman collection.";
+                hideAllDownloadButtons();
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // Download handlers
+    function setupDownload(button) {
+        button.addEventListener('click', () => {
+            const openapiJson = outputBox.textContent;
+            if (openapiJson) {
+                const blob = new Blob([openapiJson], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'openapi-spec.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        });
+    }
+    setupDownload(downloadButtonCurl);
+    setupDownload(downloadButtonCurlFile);
+    setupDownload(downloadButtonPostman);
+
+    showSection('curl-commands-section');
+});
+</script>
+</body>
+</html>
