@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: neoload-forge
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: gunicorn -w 4 -b 0.0.0.0:10000 NeoloadUtility:app
